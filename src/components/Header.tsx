@@ -9,6 +9,9 @@ interface HeaderProps {
   onNavigateHome: () => void;
   onOpenPlayerSetup: () => void;
   onOpenQR: () => void;
+  onSwitchToController?: () => void;
+  roomCode?: string;
+  isControllerConnected?: boolean;
   tvMode: boolean;
   onToggleTvMode: () => void;
   soundEnabled: boolean;
@@ -21,6 +24,9 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateHome,
   onOpenPlayerSetup,
   onOpenQR,
+  onSwitchToController,
+  roomCode,
+  isControllerConnected,
   tvMode,
   onToggleTvMode,
   soundEnabled,
@@ -107,17 +113,33 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">{tvMode ? 'TV Mode ON' : 'TV View'}</span>
           </button>
 
-          {/* QR Code Scan to Phone */}
+          {/* Change Names Button */}
+          <button
+            onClick={() => {
+              playSound.pop(soundEnabled);
+              onOpenPlayerSetup();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-[#F9DCE9] border-2 border-[#1E1B2E] shadow-[2px_2px_0px_#1E1B2E] text-[#1E1B2E] transition-all active:translate-y-0.5"
+            title="Change Player Names & Avatars"
+          >
+            <Users className="w-3.5 h-3.5 text-purple-700" />
+            <span>Change Names</span>
+          </button>
+
+          {/* QR Code / Phone Controller Button */}
           <button
             onClick={() => {
               playSound.pop(soundEnabled);
               onOpenQR();
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#E5DDFB] hover:bg-[#D9F2E7] border-2 border-[#1E1B2E] shadow-[2px_2px_0px_#1E1B2E] text-[#1E1B2E] transition-all active:translate-y-0.5"
-            title="Scan QR Code to open on Phone"
+            title="Scan QR Code or Open Phone Controller"
           >
             <QrCode className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Phone QR</span>
+            <span className="hidden sm:inline">Phone Controller</span>
+            {isControllerConnected && (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Connected" />
+            )}
           </button>
 
           {/* Sound Toggle */}
@@ -132,19 +154,6 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label={soundEnabled ? 'Mute Sounds' : 'Unmute Sounds'}
           >
             {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-gray-400" />}
-          </button>
-
-          {/* Players Roster Edit */}
-          <button
-            onClick={() => {
-              playSound.pop(soundEnabled);
-              onOpenPlayerSetup();
-            }}
-            className="p-2 rounded-xl text-xs font-bold bg-white hover:bg-[#F9DCE9] border-2 border-[#1E1B2E] shadow-[2px_2px_0px_#1E1B2E] text-[#1E1B2E] transition-all active:translate-y-0.5"
-            title="Edit Player Names & Avatars"
-            aria-label="Edit Player Names and Avatars"
-          >
-            <Users className="w-4 h-4" />
           </button>
 
           {/* Back to Lobby if in game */}

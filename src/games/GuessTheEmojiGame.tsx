@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Player, GuessEmojiPuzzle, GuessEmojiCategory } from '../types';
 import { GUESS_THE_EMOJI_PUZZLES } from '../data/guessTheEmojiData';
 import { PassPhoneCurtain } from '../components/PassPhoneCurtain';
 import { playSound } from '../utils/audio';
 import { fireConfetti } from '../utils/confetti';
+import { syncManager } from '../utils/syncManager';
 import { 
   Play, 
   RotateCcw, 
@@ -106,6 +107,53 @@ export const GuessTheEmojiGame: React.FC<GuessTheEmojiGameProps> = ({
     setCurtainKey((k) => k + 1);
     setStep('GUESSING');
   };
+
+  // Broadcast state to Phone Controller
+  useEffect(() => {
+    syncManager.send({
+      type: 'SYNC_FULL_STATE',
+      payload: {
+        activeGame: 'guess-the-emoji',
+        step,
+        currentQuestion: currentPuzzle,
+        currentVoterIndex,
+        guesses,
+        usedHints,
+        players,
+      },
+    });
+  }, [step, currentPuzzle, currentVoterIndex, guesses, usedHints, players]);
+
+  // Listen to incoming Controller actions
+  useEffect(() => {
+    return syncManager.onMessage((msg) => {
+      if (msg.type === 'SUBMIT_VOTE') {
+        const guess = msg.payload?.answer ?? msg.payload?.guess ?? msg.payload;
+        if (typeof guess === 'string') {
+          handleSubmitGuess(guess);
+        }
+      } else if (msg.type === 'USE_HINT') {
+        handleUseHint();
+      } else if (msg.type === 'NEXT_QUESTION') {
+        startRound();
+      } else if (msg.type === 'SKIP_QUESTION') {
+        pickNewPuzzle();
+      } else if (msg.type === 'CONTROLLER_READY') {
+        syncManager.send({
+          type: 'SYNC_FULL_STATE',
+          payload: {
+            activeGame: 'guess-the-emoji',
+            step,
+            currentQuestion: currentPuzzle,
+            currentVoterIndex,
+            guesses,
+            usedHints,
+            players,
+          },
+        });
+      }
+    });
+  }, [step, currentPuzzle, currentVoterIndex, guesses, usedHints, players]);
 
   const handleUseHint = () => {
     playSound.hint(soundEnabled);
@@ -347,12 +395,72 @@ export const GuessTheEmojiGame: React.FC<GuessTheEmojiGameProps> = ({
     );
   }
 
-  // 3. GUESSING (Secret pass-the-phone privacy shield)
+  // 3. GUESSING (Secret pass-the-phone privacy shield & TV Status Board)
   if (step === 'GUESSING') {
     const activeVoter = players[currentVoterIndex];
 
     return (
-      <div className="max-w-2xl mx-auto px-4 py-4">
+      <div className="max-w-3xl mx-auto px-4 py-4 animate-pop-in">
+        {/* Big TV Emoji Box */}
+        <div className="bg-[#FFF9F1] border-3 border-[#1E1B2E] rounded-3xl p-6 md:p-8 shadow-[5px_5px_0px_#1E1B2E] mb-5 text-center">
+          <div className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-1">
+            Puzzle on TV: {currentPuzzle.category}
+          </div>
+          <div className="text-5xl md:text-7xl py-2 mb-1 select-none animate-gentle-pulse">
+            {currentPuzzle.emojis}
+          </div>
+        </div>
+
+        {/* TV Audience Live Progress Board */}
+        <div className="bg-white border-3 border-[#1E1B2E] rounded-3xl p-5 shadow-[4px_4px_0px_#1E1B2E] mb-6">
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#1E1B2E]/10">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-display font-black text-xs md:text-sm text-[#1E1B2E]">
+                TV Audience Board · Guesses Locked on Phone
+              </span>
+            </div>
+            <span className="text-[11px] font-mono font-bold text-amber-800 bg-[#FFF0CC] px-2 py-0.5 rounded-full border border-amber-300">
+              Answers reveal on TV at end of round
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+            {players.map((p, idx) => {
+              const hasVoted = idx < currentVoterIndex;
+              const isCurrent = idx === currentVoterIndex;
+
+              return (
+                <div
+                  key={p.id}
+                  className={`p-3 rounded-2xl border-2 border-[#1E1B2E] transition-all ${
+                    isCurrent
+                      ? 'ring-3 ring-amber-500 scale-102 shadow-[2px_2px_0px_#1E1B2E]'
+                      : hasVoted
+                      ? 'bg-emerald-50 opacity-90'
+                      : 'bg-gray-50 opacity-60'
+                  }`}
+                  style={{ backgroundColor: isCurrent ? p.color : undefined }}
+                >
+                  <div className="text-2xl mb-1">{p.avatar}</div>
+                  <div className="font-display font-black text-xs text-[#1E1B2E] truncate">
+                    {p.name}
+                  </div>
+                  <div className="mt-1 text-[10px] font-bold">
+                    {hasVoted ? (
+                      <span className="text-emerald-700">✅ Answer Locked</span>
+                    ) : isCurrent ? (
+                      <span className="text-amber-800 animate-pulse">📱 Guessing on Phone...</span>
+                    ) : (
+                      <span className="text-gray-400">⏳ Waiting</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Pass-the-phone privacy shield */}
         <PassPhoneCurtain
           key={curtainKey}

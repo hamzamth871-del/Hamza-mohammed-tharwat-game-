@@ -4,6 +4,7 @@ import { WHOS_MOST_LIKELY_QUESTIONS } from '../data/whosMostLikelyData';
 import { PassPhoneCurtain } from '../components/PassPhoneCurtain';
 import { playSound } from '../utils/audio';
 import { fireConfetti } from '../utils/confetti';
+import { syncManager } from '../utils/syncManager';
 import { 
   Play, 
   RotateCcw, 
@@ -100,6 +101,49 @@ export const WhosMostLikelyGame: React.FC<WhosMostLikelyGameProps> = ({
     setCurtainKey((k) => k + 1);
     setStep('VOTING');
   };
+
+  // Broadcast state to Phone Controller whenever step, question, voter, or votes change
+  useEffect(() => {
+    syncManager.send({
+      type: 'SYNC_FULL_STATE',
+      payload: {
+        activeGame: 'whos-most-likely',
+        step,
+        currentQuestion,
+        currentVoterIndex,
+        votes,
+        players,
+      },
+    });
+  }, [step, currentQuestion, currentVoterIndex, votes, players]);
+
+  // Listen to incoming Controller actions (voting, next round, skip)
+  useEffect(() => {
+    return syncManager.onMessage((msg) => {
+      if (msg.type === 'SUBMIT_VOTE') {
+        const targetId = Number(msg.payload?.targetPlayerId ?? msg.payload);
+        if (targetId) {
+          handleVote(targetId);
+        }
+      } else if (msg.type === 'NEXT_QUESTION') {
+        startRound();
+      } else if (msg.type === 'SKIP_QUESTION') {
+        pickNewQuestion();
+      } else if (msg.type === 'CONTROLLER_READY') {
+        syncManager.send({
+          type: 'SYNC_FULL_STATE',
+          payload: {
+            activeGame: 'whos-most-likely',
+            step,
+            currentQuestion,
+            currentVoterIndex,
+            votes,
+            players,
+          },
+        });
+      }
+    });
+  }, [step, currentQuestion, currentVoterIndex, votes, players]);
 
   const handleVote = (targetPlayerId: number) => {
     const voter = players[currentVoterIndex];
@@ -313,23 +357,73 @@ export const WhosMostLikelyGame: React.FC<WhosMostLikelyGameProps> = ({
     );
   }
 
-  // 3. VOTING STEP (Secret pass-the-phone privacy shield)
+  // 3. VOTING STEP (Secret pass-the-phone privacy shield & TV Status Board)
   if (step === 'VOTING') {
     const activeVoter = players[currentVoterIndex];
 
     return (
-      <div className="max-w-2xl mx-auto px-4 py-4">
-        {/* TV Backdrop Question Card (shows on the TV screen) */}
-        <div className="bg-[#FFF0CC] border-2 border-[#1E1B2E] rounded-2xl p-4 shadow-[3px_3px_0px_#1E1B2E] text-center mb-5">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-[#1E1B2E]/60 mb-1">
+      <div className="max-w-3xl mx-auto px-4 py-4 animate-pop-in">
+        {/* TV Question Card */}
+        <div className="bg-[#FFF0CC] border-3 border-[#1E1B2E] rounded-3xl p-6 md:p-8 shadow-[5px_5px_0px_#1E1B2E] text-center mb-6">
+          <div className="text-xs font-bold uppercase tracking-wider text-purple-700 mb-1">
             Question on TV:
           </div>
-          <div className="font-display font-black text-lg md:text-xl text-[#1E1B2E]">
+          <div className="font-display font-black text-2xl md:text-3xl text-[#1E1B2E] leading-snug">
             "{currentQuestion.question}"
           </div>
         </div>
 
-        {/* Secret Pass-The-Phone Curtain */}
+        {/* TV Audience Live Voting Progress Board */}
+        <div className="bg-white border-3 border-[#1E1B2E] rounded-3xl p-5 shadow-[4px_4px_0px_#1E1B2E] mb-6">
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#1E1B2E]/10">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-display font-black text-xs md:text-sm text-[#1E1B2E]">
+                TV Audience Board · Voting in Progress
+              </span>
+            </div>
+            <span className="text-[11px] font-mono font-bold text-purple-700 bg-[#E5DDFB] px-2 py-0.5 rounded-full border border-purple-300">
+              Votes reveal on TV at end of round
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+            {players.map((p, idx) => {
+              const hasVoted = idx < currentVoterIndex;
+              const isCurrent = idx === currentVoterIndex;
+
+              return (
+                <div
+                  key={p.id}
+                  className={`p-3 rounded-2xl border-2 border-[#1E1B2E] transition-all ${
+                    isCurrent
+                      ? 'ring-3 ring-purple-500 scale-102 shadow-[2px_2px_0px_#1E1B2E]'
+                      : hasVoted
+                      ? 'bg-emerald-50 opacity-90'
+                      : 'bg-gray-50 opacity-60'
+                  }`}
+                  style={{ backgroundColor: isCurrent ? p.color : undefined }}
+                >
+                  <div className="text-2xl mb-1">{p.avatar}</div>
+                  <div className="font-display font-black text-xs text-[#1E1B2E] truncate">
+                    {p.name}
+                  </div>
+                  <div className="mt-1 text-[10px] font-bold">
+                    {hasVoted ? (
+                      <span className="text-emerald-700">✅ Voted (Secret)</span>
+                    ) : isCurrent ? (
+                      <span className="text-purple-700 animate-pulse">📱 Voting on Phone...</span>
+                    ) : (
+                      <span className="text-gray-400">⏳ Waiting</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Secret Pass-The-Phone Curtain (Interactive on shared screen/laptop) */}
         <PassPhoneCurtain
           key={curtainKey}
           player={activeVoter}
