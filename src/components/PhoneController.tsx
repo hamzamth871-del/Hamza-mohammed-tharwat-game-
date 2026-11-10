@@ -16,8 +16,11 @@ import {
   Play,
   CheckCircle,
   HelpCircle,
-  Smartphone
+  Smartphone,
+  Trophy,
+  XCircle
 } from 'lucide-react';
+import { LeaderboardCard } from './LeaderboardCard';
 
 interface PhoneControllerProps {
   players: Player[];
@@ -59,6 +62,7 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
   const [currentVoterIndex, setCurrentVoterIndex] = useState<number>(0);
   const [votesCast, setVotesCast] = useState<Record<number, any>>({});
   const [isHintUsed, setIsHintUsed] = useState<boolean>(false);
+  const [roundResults, setRoundResults] = useState<any>(null);
 
   // Controller UI state
   const [showNameEditor, setShowNameEditor] = useState<boolean>(false);
@@ -86,7 +90,15 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
       if (msg.type === 'SYNC_FULL_STATE' && msg.payload) {
         const p = msg.payload;
         if (p.activeGame !== undefined) setActiveGame(p.activeGame);
-        if (p.step) setGameStep(p.step);
+        if (p.step) {
+          setGameStep(p.step);
+          if (p.step !== 'REVEAL') {
+            setRoundResults(null);
+          }
+        }
+        if (p.results) {
+          setRoundResults(p.results);
+        }
         if (p.currentQuestion) setCurrentQuestion(p.currentQuestion);
         if (p.currentVoterIndex !== undefined) {
           // If voter changed, reset the privacy unlock for the new player!
@@ -111,6 +123,7 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
       } else if (msg.type === 'SELECT_GAME') {
         setActiveGame(msg.payload);
         setIsUnlockedForVoter(false);
+        setRoundResults(null);
       }
     });
 
@@ -151,8 +164,21 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
     triggerHaptic([30, 20, 30]);
     playSound.pop(soundEnabled);
     setActiveGame(game);
+    setGameStep('QUESTION_PREVIEW');
+    setRoundResults(null);
     onSelectGame(game);
     syncManager.send({ type: 'SELECT_GAME', payload: game });
+    setTimeout(() => {
+      syncManager.send({ type: 'START_VOTING' });
+    }, 120);
+  };
+
+  const handleStartVotingAction = () => {
+    triggerHaptic([30, 20, 40]);
+    playSound.pop(soundEnabled);
+    setIsUnlockedForVoter(false);
+    setLastVotedPlayerId(null);
+    syncManager.send({ type: 'START_VOTING' });
   };
 
   const handleSendVote = (value: any) => {
@@ -178,6 +204,7 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
     playSound.pop(soundEnabled);
     setIsUnlockedForVoter(false);
     setLastVotedPlayerId(null);
+    setRoundResults(null);
     syncManager.send({ type: 'NEXT_QUESTION' });
   };
 
@@ -373,6 +400,11 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
               </div>
               <ArrowRight className="w-5 h-5 text-[#1E1B2E]" />
             </button>
+
+            {/* Live Leaderboard in Lobby */}
+            <div className="pt-2">
+              <LeaderboardCard compact players={players} />
+            </div>
           </div>
         )}
 
@@ -381,36 +413,41 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
           <div className="space-y-3 animate-pop-in">
             {/* PRIVACY HANDOFF SHIELD */}
             {!isUnlockedForVoter ? (
-              <div
-                className="rounded-3xl border-3 border-[#1E1B2E] p-6 text-center text-[#1E1B2E] shadow-[0_6px_0_#0D0B17]"
-                style={{ backgroundColor: currentVoter.color }}
-              >
-                <div className="w-20 h-20 mx-auto mb-2 rounded-2xl bg-white border-3 border-[#1E1B2E] shadow-[2px_2px_0_#1E1B2E] flex items-center justify-center text-4xl animate-gentle-pulse">
-                  {currentVoter.avatar}
-                </div>
-
-                <div className="text-xs font-bold uppercase tracking-wider text-[#1E1B2E]/70">
-                  Pass Controller to:
-                </div>
-                <div className="font-display text-3xl font-black text-[#1E1B2E] mb-1">
-                  {currentVoter.name}!
-                </div>
-                <div className="text-[11px] font-bold text-[#1E1B2E]/70 mb-5">
-                  Player {currentVoterIndex + 1} of 4 · Secret Turn
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic(30);
-                    playSound.pop(soundEnabled);
-                    setIsUnlockedForVoter(true);
-                  }}
-                  className="w-full py-4 px-6 rounded-2xl font-display font-black text-lg bg-white hover:bg-yellow-100 border-3 border-[#1E1B2E] shadow-[0_5px_0_#1E1B2E] active:shadow-[0_1px_0_#1E1B2E] active:translate-y-1 text-[#1E1B2E] flex items-center justify-center gap-2"
+              <div className="space-y-3">
+                <div
+                  className="rounded-3xl border-3 border-[#1E1B2E] p-6 text-center text-[#1E1B2E] shadow-[0_6px_0_#0D0B17]"
+                  style={{ backgroundColor: currentVoter.color }}
                 >
-                  <Lock className="w-5 h-5 text-purple-700" />
-                  <span>I am {currentVoter.name} — Unlock!</span>
-                </button>
+                  <div className="w-20 h-20 mx-auto mb-2 rounded-2xl bg-white border-3 border-[#1E1B2E] shadow-[2px_2px_0_#1E1B2E] flex items-center justify-center text-4xl animate-gentle-pulse">
+                    {currentVoter.avatar}
+                  </div>
+
+                  <div className="text-xs font-bold uppercase tracking-wider text-[#1E1B2E]/70">
+                    Pass Controller to:
+                  </div>
+                  <div className="font-display text-3xl font-black text-[#1E1B2E] mb-1">
+                    {currentVoter.name}!
+                  </div>
+                  <div className="text-[11px] font-bold text-[#1E1B2E]/70 mb-5">
+                    Player {currentVoterIndex + 1} of 4 · Secret Turn
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic(30);
+                      playSound.pop(soundEnabled);
+                      setIsUnlockedForVoter(true);
+                    }}
+                    className="w-full py-4 px-6 rounded-2xl font-display font-black text-lg bg-white hover:bg-yellow-100 border-3 border-[#1E1B2E] shadow-[0_5px_0_#1E1B2E] active:shadow-[0_1px_0_#1E1B2E] active:translate-y-1 text-[#1E1B2E] flex items-center justify-center gap-2"
+                  >
+                    <Lock className="w-5 h-5 text-purple-700" />
+                    <span>I am {currentVoter.name} — Unlock!</span>
+                  </button>
+                </div>
+
+                {/* Live Leaderboard Under Curtain */}
+                <LeaderboardCard compact players={players} />
               </div>
             ) : (
               /* UNLOCKED TACTILE ARCADE BUTTONS */
@@ -431,6 +468,17 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
                 {/* GAME 1: WHO'S MOST LIKELY ARCADE BUZZERS */}
                 {activeGame === 'whos-most-likely' && (
                   <div>
+                    {/* Prompt on Phone */}
+                    {currentQuestion && (
+                      <div className="p-3 mb-3 bg-[#1E1B2E] rounded-2xl border border-purple-400/40 text-center">
+                        <div className="text-[10px] font-mono uppercase text-purple-300 font-bold mb-0.5">
+                          {currentQuestion.category}
+                        </div>
+                        <div className="font-display font-black text-sm text-white leading-snug">
+                          "{currentQuestion.question}"
+                        </div>
+                      </div>
+                    )}
                     <div className="text-xs font-bold text-center text-gray-300 mb-2">
                       Tap who fits this best (Answers reveal on TV at end of round):
                     </div>
@@ -456,7 +504,8 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
                 {/* GAME 2: WOULD YOU RATHER GIANT ARCADE PADDLES */}
                 {activeGame === 'would-you-rather' && (
                   <div className="space-y-3">
-                    <div className="text-xs font-bold text-center text-gray-300 mb-1">
+                    {/* Prompt on Phone */}
+                    <div className="text-xs font-bold text-center text-purple-300 mb-1">
                       Tap your secret dilemma choice:
                     </div>
 
@@ -536,17 +585,112 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
           </div>
         )}
 
-        {/* STATE 3: RESULTS REVEAL ON TV */}
+        {/* STATE 3: RESULTS REVEAL ON PHONE & TV */}
         {activeGame && gameStep === 'REVEAL' && (
           <div className="space-y-3 animate-pop-in">
-            <div className="bg-[#26213B] rounded-3xl border-2 border-[#4D4573] p-5 text-center shadow-lg">
-              <div className="text-4xl mb-2">📺 🎉</div>
-              <h3 className="font-display font-black text-lg text-white">
-                ANSWERS ARE LIVE ON TV!
-              </h3>
-              <p className="text-xs text-gray-300 mt-1 max-w-xs mx-auto">
-                Look at the laptop or TV screen to see everyone's votes, percentages, correct answers, and points!
-              </p>
+            {/* Header Banner */}
+            <div className="bg-[#26213B] rounded-3xl border-2 border-emerald-400 p-4 text-center shadow-xl">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400 text-xs font-bold mb-2">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                <span>ALL ANSWERS LOCKED IN!</span>
+              </div>
+
+              {/* Game Specific Outcome */}
+              {roundResults?.correctAnswer && (
+                <div className="mb-1">
+                  <div className="text-[10px] uppercase font-bold text-gray-400">Correct Answer:</div>
+                  <div className="font-display font-black text-lg text-yellow-300">
+                    {roundResults.correctAnswer}
+                  </div>
+                </div>
+              )}
+
+              {roundResults?.majorityChoice && (
+                <div className="mb-1">
+                  <div className="text-[10px] uppercase font-bold text-gray-400">Majority Choice:</div>
+                  <div className="font-display font-black text-base text-cyan-300">
+                    {roundResults.isTie ? '🤝 Perfect 50/50 Group Split!' : `Option ${roundResults.majorityChoice}`}
+                  </div>
+                </div>
+              )}
+
+              {roundResults?.crownedNames && (
+                <div className="mb-1">
+                  <div className="text-[10px] uppercase font-bold text-gray-400">Crowned Most Likely:</div>
+                  <div className="font-display font-black text-base text-yellow-300">
+                    👑 {roundResults.crownedNames.join(' & ')}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* WHO PICKED RIGHT & WHO PICKED WRONG BREAKDOWN */}
+            <div className="bg-[#26213B] rounded-3xl border-2 border-[#4D4573] p-3 shadow-lg">
+              <div className="text-xs font-mono font-bold text-purple-200 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+                <span>Who Picked Right & Wrong:</span>
+                <span className="text-[10px] text-gray-400">Round Points</span>
+              </div>
+
+              <div className="space-y-2">
+                {players.map((p) => {
+                  const breakdown = roundResults?.resultsBreakdown?.[p.id];
+                  const pts = roundResults?.pointsAwarded?.[p.id] ?? 0;
+                  const isRight = breakdown ? breakdown.isCorrect : pts > 0;
+                  const guess = breakdown?.guess;
+
+                  return (
+                    <div
+                      key={p.id}
+                      className={`p-2.5 rounded-2xl border-2 transition-all flex items-center justify-between gap-2.5 ${
+                        isRight
+                          ? 'bg-emerald-950/40 border-emerald-500/60 shadow-[0_2px_0_#059669]'
+                          : 'bg-rose-950/30 border-rose-500/50 shadow-[0_2px_0_#E11D48]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div
+                          className="w-10 h-10 rounded-xl border-2 border-[#1E1B2E] flex items-center justify-center text-2xl shrink-0"
+                          style={{ backgroundColor: p.color }}
+                        >
+                          {p.avatar}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-display font-black text-sm text-white truncate flex items-center gap-1.5">
+                            <span>{p.name}</span>
+                            {isRight ? (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400 text-[10px] font-black">
+                                ✅ RIGHT
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-400 text-[10px] font-black">
+                                ❌ WRONG
+                              </span>
+                            )}
+                          </div>
+                          {guess && (
+                            <div className="text-[11px] text-gray-300 truncate mt-0.5">
+                              {guess}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className={`font-mono font-black text-sm ${
+                          pts > 0 ? 'text-emerald-400' : 'text-gray-400'
+                        }`}>
+                          {pts > 0 ? `+${pts} pts` : '0 pts'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* LIVE LEADERBOARD WITH RANKINGS */}
+            <div className="pt-1">
+              <LeaderboardCard compact players={players} recentPointsMap={roundResults?.pointsAwarded} />
             </div>
 
             {/* Next Round Arcade Push Button */}
@@ -560,21 +704,63 @@ export const PhoneController: React.FC<PhoneControllerProps> = ({
           </div>
         )}
 
-        {/* STATE 4: QUESTION PREVIEW ON TV */}
+        {/* STATE 4: QUESTION PREVIEW / INSTRUCTIONS (SHOW PROMPT & LEADERBOARD BEFORE VOTING) */}
         {activeGame && (gameStep === 'QUESTION_PREVIEW' || gameStep === 'INSTRUCTIONS') && (
           <div className="space-y-3 animate-pop-in">
-            <div className="bg-[#26213B] rounded-3xl border-2 border-[#4D4573] p-5 text-center">
-              <div className="text-3xl mb-1">👀</div>
-              <h3 className="font-display font-black text-base text-white">
-                Reading Prompt on TV
-              </h3>
-              <p className="text-xs text-gray-300 mt-1">
-                When everyone is ready, press the button below to start passing the phone controller!
+            {/* Game & Prompt Card */}
+            <div className="bg-[#26213B] rounded-3xl border-2 border-[#4D4573] p-4 text-center">
+              <div className="text-xs font-mono font-bold uppercase text-purple-300 mb-1 flex items-center justify-center gap-1.5">
+                <span>
+                  {activeGame === 'whos-most-likely' && '🗳️ Who\'s Most Likely To?'}
+                  {activeGame === 'would-you-rather' && '⚖️ Would You Rather?'}
+                  {activeGame === 'guess-the-emoji' && '🧩 Guess the Emoji'}
+                </span>
+                <span>·</span>
+                <span className="text-emerald-400">Get Ready!</span>
+              </div>
+
+              {/* Question Preview */}
+              {activeGame === 'whos-most-likely' && currentQuestion && (
+                <div className="p-3 my-2 bg-[#1E1B2E] rounded-2xl border border-purple-400/40">
+                  <div className="font-display font-black text-base text-white">
+                    "{currentQuestion.question}"
+                  </div>
+                </div>
+              )}
+
+              {activeGame === 'would-you-rather' && currentQuestion && (
+                <div className="space-y-1.5 my-2">
+                  <div className="p-2.5 bg-pink-900/30 border border-pink-400/40 rounded-xl text-xs font-bold text-pink-200">
+                    <span className="font-black text-pink-400">A:</span> {currentQuestion.scenarioA}
+                  </div>
+                  <div className="p-2.5 bg-blue-900/30 border border-blue-400/40 rounded-xl text-xs font-bold text-blue-200">
+                    <span className="font-black text-blue-400">B:</span> {currentQuestion.scenarioB}
+                  </div>
+                </div>
+              )}
+
+              {activeGame === 'guess-the-emoji' && currentQuestion && (
+                <div className="p-3 my-2 bg-[#1E1B2E] rounded-2xl border border-amber-400/40">
+                  <div className="text-4xl py-1">{currentQuestion.emojis}</div>
+                  {currentQuestion.clue && (
+                    <div className="text-xs text-amber-200 font-bold mt-1">
+                      Clue: {currentQuestion.clue}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <p className="text-xs text-gray-300 mt-2">
+                All 4 players will vote secretly on this phone in turn.
               </p>
             </div>
 
+            {/* Live Leaderboard Display on Phone */}
+            <LeaderboardCard compact players={players} />
+
+            {/* Launch / Pass Controller Button */}
             <button
-              onClick={handleNextQuestionAction}
+              onClick={handleStartVotingAction}
               className="w-full py-4 px-6 rounded-2xl bg-[#34D399] hover:bg-[#10B981] text-[#1E1B2E] border-3 border-[#1E1B2E] shadow-[0_6px_0_#1E1B2E] active:shadow-[0_1px_0_#1E1B2E] active:translate-y-1.5 font-display font-black text-base flex items-center justify-center gap-2"
             >
               <span>Pass Controller to Player 1</span>

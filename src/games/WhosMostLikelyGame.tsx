@@ -20,6 +20,7 @@ import {
   HelpCircle,
   ArrowLeft
 } from 'lucide-react';
+import { LeaderboardCard } from '../components/LeaderboardCard';
 
 interface WhosMostLikelyGameProps {
   players: Player[];
@@ -60,6 +61,7 @@ export const WhosMostLikelyGame: React.FC<WhosMostLikelyGameProps> = ({
   // Voting state: maps voter player ID to chosen target player ID
   const [currentVoterIndex, setCurrentVoterIndex] = useState(0); // 0, 1, 2, 3
   const [votes, setVotes] = useState<Record<number, number>>({}); // { voterId: targetPlayerId }
+  const [roundPointsMap, setRoundPointsMap] = useState<Record<number, number>>({});
   const [curtainKey, setCurtainKey] = useState(0);
 
   // Filter questions based on category and unused status
@@ -89,6 +91,7 @@ export const WhosMostLikelyGame: React.FC<WhosMostLikelyGameProps> = ({
     playSound.pop(soundEnabled);
     pickNewQuestion(selectedCategory);
     setVotes({});
+    setRoundPointsMap({});
     setCurrentVoterIndex(0);
     setCurtainKey((k) => k + 1);
     setStep('QUESTION_PREVIEW');
@@ -125,8 +128,20 @@ export const WhosMostLikelyGame: React.FC<WhosMostLikelyGameProps> = ({
         if (targetId) {
           handleVote(targetId);
         }
+      } else if (msg.type === 'START_VOTING') {
+        if (step === 'INSTRUCTIONS') {
+          startRound();
+        } else {
+          proceedToVoting();
+        }
       } else if (msg.type === 'NEXT_QUESTION') {
-        startRound();
+        if (step === 'INSTRUCTIONS') {
+          startRound();
+        } else if (step === 'QUESTION_PREVIEW') {
+          proceedToVoting();
+        } else {
+          startRound();
+        }
       } else if (msg.type === 'SKIP_QUESTION') {
         pickNewQuestion();
       } else if (msg.type === 'CONTROLLER_READY') {
@@ -180,18 +195,51 @@ export const WhosMostLikelyGame: React.FC<WhosMostLikelyGameProps> = ({
       if (c > maxVotes) maxVotes = c;
     });
 
-    // Award 100 points to whoever got the highest votes (split if tie)
+    // Award points to whoever got the highest votes (100 pts)
+    // Plus bonus points to anyone who correctly voted for the crowned winner (25 pts)
     const winners = Object.keys(counts)
       .map(Number)
       .filter((id) => counts[id] === maxVotes && maxVotes > 0);
 
     const pointsAwarded: Record<number, number> = {};
-    if (winners.length > 0) {
-      winners.forEach((winnerId) => {
-        pointsAwarded[winnerId] = 100;
-      });
-      onAwardPoints(pointsAwarded);
-    }
+    const resultsBreakdown: Record<number, { isCorrect: boolean; guess: string; points: number }> = {};
+
+    players.forEach((p) => {
+      const votedTargetId = finalVotes[p.id];
+      const votedTarget = players.find((x) => x.id === votedTargetId);
+      const isWinner = winners.includes(p.id);
+      const backedWinner = winners.includes(votedTargetId);
+      const pts = (isWinner ? 100 : 0) + (backedWinner ? 25 : 0);
+      pointsAwarded[p.id] = pts;
+
+      resultsBreakdown[p.id] = {
+        isCorrect: backedWinner || isWinner,
+        guess: `Voted for ${votedTarget ? votedTarget.name : 'Unknown'}`,
+        points: pts,
+      };
+    });
+
+    setRoundPointsMap(pointsAwarded);
+    onAwardPoints(pointsAwarded);
+
+    syncManager.send({
+      type: 'SYNC_FULL_STATE',
+      payload: {
+        activeGame: 'whos-most-likely',
+        step: 'REVEAL',
+        currentQuestion,
+        votes: finalVotes,
+        results: {
+          gameTitle: "Who's Most Likely To?",
+          pointsAwarded,
+          resultsBreakdown,
+          winners,
+          crownedNames: winners.map((id) => players.find((p) => p.id === id)?.name).filter(Boolean),
+          maxVotes,
+        },
+        players,
+      },
+    });
 
     setStep('REVEAL');
   };
@@ -528,6 +576,29 @@ export const WhosMostLikelyGame: React.FC<WhosMostLikelyGameProps> = ({
                   <span>{count} {count === 1 ? 'Vote' : 'Votes'}</span>
                 </div>
 
+                {/* Points and Vote outcome badge */}
+                <div className="mt-2 flex flex-col items-center gap-1">
+                  {roundPointsMap[p.id] !== undefined && (
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                      roundPointsMap[p.id] > 0
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : 'bg-rose-100 text-rose-800 border-rose-300'
+                    }`}>
+                      {roundPointsMap[p.id] > 0 ? `+${roundPointsMap[p.id]} pts` : '0 pts'}
+                    </span>
+                  )}
+                  {votes[p.id] && (
+                    <span className="text-[10px] font-bold text-[#1E1B2E]/80">
+                      Voted: {players.find((pl) => pl.id === votes[p.id])?.name || 'Unknown'}{' '}
+                      {voteTallies.winners.includes(votes[p.id]) ? (
+                        <span className="text-emerald-700 font-black">✅ Right</span>
+                      ) : (
+                        <span className="text-rose-700 font-black">❌ Wrong</span>
+                      )}
+                    </span>
+                  )}
+                </div>
+
                 {/* Who voted for this person */}
                 <div className="mt-2 text-[10px] text-[#1E1B2E]/70 font-semibold min-h-[16px]">
                   {Object.entries(votes)
@@ -564,6 +635,11 @@ export const WhosMostLikelyGame: React.FC<WhosMostLikelyGameProps> = ({
               </>
             )}
           </div>
+        </div>
+
+        {/* Live Leaderboard Display */}
+        <div className="mb-6 max-w-xl mx-auto">
+          <LeaderboardCard players={players} recentPointsMap={roundPointsMap} />
         </div>
 
         {/* Action Navigation */}

@@ -7,6 +7,7 @@ export interface SyncMessage {
     | 'UPDATE_PLAYERS'
     | 'SELECT_GAME'
     | 'SUBMIT_VOTE'
+    | 'START_VOTING'
     | 'NEXT_QUESTION'
     | 'USE_HINT'
     | 'SKIP_QUESTION'

@@ -19,6 +19,7 @@ import {
   Flame,
   Scale
 } from 'lucide-react';
+import { LeaderboardCard } from '../components/LeaderboardCard';
 
 interface WouldYouRatherGameProps {
   players: Player[];
@@ -60,6 +61,7 @@ export const WouldYouRatherGame: React.FC<WouldYouRatherGameProps> = ({
   // Voting state: maps voter ID to choice 'A' or 'B'
   const [currentVoterIndex, setCurrentVoterIndex] = useState(0);
   const [choices, setChoices] = useState<Record<number, 'A' | 'B'>>({});
+  const [roundPointsMap, setRoundPointsMap] = useState<Record<number, number>>({});
   const [curtainKey, setCurtainKey] = useState(0);
 
   // Pick a fresh question
@@ -79,6 +81,7 @@ export const WouldYouRatherGame: React.FC<WouldYouRatherGameProps> = ({
     playSound.pop(soundEnabled);
     pickNewQuestion(selectedCategory);
     setChoices({});
+    setRoundPointsMap({});
     setCurrentVoterIndex(0);
     setCurtainKey((k) => k + 1);
     setStep('QUESTION_PREVIEW');
@@ -115,8 +118,20 @@ export const WouldYouRatherGame: React.FC<WouldYouRatherGameProps> = ({
         if (choice === 'A' || choice === 'B') {
           handleSelectChoice(choice);
         }
+      } else if (msg.type === 'START_VOTING') {
+        if (step === 'INSTRUCTIONS') {
+          startRound();
+        } else {
+          proceedToVoting();
+        }
       } else if (msg.type === 'NEXT_QUESTION') {
-        startRound();
+        if (step === 'INSTRUCTIONS') {
+          startRound();
+        } else if (step === 'QUESTION_PREVIEW') {
+          proceedToVoting();
+        } else {
+          startRound();
+        }
       } else if (msg.type === 'SKIP_QUESTION') {
         pickNewQuestion();
       } else if (msg.type === 'CONTROLLER_READY') {
@@ -158,25 +173,52 @@ export const WouldYouRatherGame: React.FC<WouldYouRatherGameProps> = ({
       fireConfetti(2600);
     }, 400);
 
-    // Calculate majority voters for bonus party points
+    // Calculate majority voters for party points
     const countA = Object.values(finalChoices).filter((c) => c === 'A').length;
     const countB = Object.values(finalChoices).filter((c) => c === 'B').length;
 
     const pointsAwarded: Record<number, number> = {};
-    if (countA !== countB) {
-      const winningChoice = countA > countB ? 'A' : 'B';
-      Object.entries(finalChoices).forEach(([playerId, choice]) => {
-        if (choice === winningChoice) {
-          pointsAwarded[Number(playerId)] = 50; // +50 for voting with majority
-        }
-      });
-    } else {
-      // Perfect split 50/50: all 4 players get 50 synergy points!
-      players.forEach((p) => {
-        pointsAwarded[p.id] = 50;
-      });
-    }
+    const resultsBreakdown: Record<number, { isCorrect: boolean; guess: string; points: number }> = {};
+    const isTie = countA === countB;
+    const winningChoice = countA > countB ? 'A' : (countB > countA ? 'B' : 'TIE');
+
+    players.forEach((p) => {
+      const choice = finalChoices[p.id];
+      const isRight = isTie ? true : choice === winningChoice;
+      const pts = isRight ? 50 : 0;
+      pointsAwarded[p.id] = pts;
+
+      const choiceText = choice === 'A' ? currentQuestion.scenarioA : currentQuestion.scenarioB;
+      resultsBreakdown[p.id] = {
+        isCorrect: isRight,
+        guess: `Option ${choice}: "${choiceText}"`,
+        points: pts,
+      };
+    });
+
+    setRoundPointsMap(pointsAwarded);
     onAwardPoints(pointsAwarded);
+
+    syncManager.send({
+      type: 'SYNC_FULL_STATE',
+      payload: {
+        activeGame: 'would-you-rather',
+        step: 'REVEAL',
+        currentQuestion,
+        choices: finalChoices,
+        results: {
+          gameTitle: 'Would You Rather?',
+          pointsAwarded,
+          resultsBreakdown,
+          majorityChoice: winningChoice,
+          isTie,
+          optionA: currentQuestion.scenarioA,
+          optionB: currentQuestion.scenarioB,
+        },
+        players,
+      },
+    });
+
     setStep('REVEAL');
   };
 
@@ -564,16 +606,26 @@ export const WouldYouRatherGame: React.FC<WouldYouRatherGameProps> = ({
               </div>
               <div className="flex flex-wrap gap-2 min-h-[44px] items-center">
                 {results.playersA.length > 0 ? (
-                  results.playersA.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-xl border-2 border-[#1E1B2E] shadow-[1px_1px_0px_#1E1B2E]"
-                      style={{ backgroundColor: p.color }}
-                    >
-                      <span className="text-xl">{p.avatar}</span>
-                      <span className="font-display font-bold text-xs text-[#1E1B2E]">{p.name}</span>
-                    </div>
-                  ))
+                  results.playersA.map((p) => {
+                    const isWinner = results.percentA >= results.percentB;
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-[#1E1B2E] shadow-[1px_1px_0px_#1E1B2E]"
+                        style={{ backgroundColor: p.color }}
+                      >
+                        <span className="text-xl">{p.avatar}</span>
+                        <div className="flex flex-col text-left">
+                          <span className="font-display font-bold text-xs text-[#1E1B2E] leading-none">{p.name}</span>
+                          <span className={`text-[9px] font-black mt-0.5 ${
+                            isWinner ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {results.percentA === 50 ? '🤝 Synergy +50' : (isWinner ? '✅ Right +50' : '❌ Wrong 0')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
                 ) : (
                   <span className="text-xs italic text-gray-500">Nobody chose Option A!</span>
                 )}
@@ -612,16 +664,26 @@ export const WouldYouRatherGame: React.FC<WouldYouRatherGameProps> = ({
               </div>
               <div className="flex flex-wrap gap-2 min-h-[44px] items-center">
                 {results.playersB.length > 0 ? (
-                  results.playersB.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-xl border-2 border-[#1E1B2E] shadow-[1px_1px_0px_#1E1B2E]"
-                      style={{ backgroundColor: p.color }}
-                    >
-                      <span className="text-xl">{p.avatar}</span>
-                      <span className="font-display font-bold text-xs text-[#1E1B2E]">{p.name}</span>
-                    </div>
-                  ))
+                  results.playersB.map((p) => {
+                    const isWinner = results.percentB >= results.percentA;
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-[#1E1B2E] shadow-[1px_1px_0px_#1E1B2E]"
+                        style={{ backgroundColor: p.color }}
+                      >
+                        <span className="text-xl">{p.avatar}</span>
+                        <div className="flex flex-col text-left">
+                          <span className="font-display font-bold text-xs text-[#1E1B2E] leading-none">{p.name}</span>
+                          <span className={`text-[9px] font-black mt-0.5 ${
+                            isWinner ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>
+                            {results.percentB === 50 ? '🤝 Synergy +50' : (isWinner ? '✅ Right +50' : '❌ Wrong 0')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
                 ) : (
                   <span className="text-xs italic text-gray-500">Nobody chose Option B!</span>
                 )}
@@ -647,6 +709,11 @@ export const WouldYouRatherGame: React.FC<WouldYouRatherGameProps> = ({
               </>
             )}
           </div>
+        </div>
+
+        {/* Live Leaderboard Display */}
+        <div className="mb-6 max-w-xl mx-auto">
+          <LeaderboardCard players={players} recentPointsMap={roundPointsMap} />
         </div>
 
         {/* Action Navigation */}

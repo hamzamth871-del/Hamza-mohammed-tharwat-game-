@@ -5,6 +5,7 @@ import { PassPhoneCurtain } from '../components/PassPhoneCurtain';
 import { playSound } from '../utils/audio';
 import { fireConfetti } from '../utils/confetti';
 import { syncManager } from '../utils/syncManager';
+import { LeaderboardCard } from '../components/LeaderboardCard';
 import { 
   Play, 
   RotateCcw, 
@@ -65,6 +66,7 @@ export const GuessTheEmojiGame: React.FC<GuessTheEmojiGameProps> = ({
   const [currentVoterIndex, setCurrentVoterIndex] = useState(0); // 0, 1, 2, 3
   const [guesses, setGuesses] = useState<Record<number, string>>({}); // { playerId: answerString }
   const [usedHints, setUsedHints] = useState<Record<number, boolean>>({}); // { playerId: boolean }
+  const [roundPointsMap, setRoundPointsMap] = useState<Record<number, number>>({});
   const [curtainKey, setCurtainKey] = useState(0);
 
   // Input mode: multiple-choice (default) or text field
@@ -134,8 +136,20 @@ export const GuessTheEmojiGame: React.FC<GuessTheEmojiGameProps> = ({
         }
       } else if (msg.type === 'USE_HINT') {
         handleUseHint();
+      } else if (msg.type === 'START_VOTING') {
+        if (step === 'INSTRUCTIONS') {
+          startRound();
+        } else {
+          proceedToGuessing();
+        }
       } else if (msg.type === 'NEXT_QUESTION') {
-        startRound();
+        if (step === 'INSTRUCTIONS') {
+          startRound();
+        } else if (step === 'PUZZLE_PREVIEW') {
+          proceedToGuessing();
+        } else {
+          startRound();
+        }
       } else if (msg.type === 'SKIP_QUESTION') {
         pickNewPuzzle();
       } else if (msg.type === 'CONTROLLER_READY') {
@@ -191,6 +205,7 @@ export const GuessTheEmojiGame: React.FC<GuessTheEmojiGameProps> = ({
     // No hint bonus: +25 points
     // Hint used: forfeits 25 bonus
     const pointsAwarded: Record<number, number> = {};
+    const resultsBreakdown: Record<number, { isCorrect: boolean; guess: string; points: number }> = {};
     let anyCorrect = false;
 
     players.forEach((p) => {
@@ -199,15 +214,34 @@ export const GuessTheEmojiGame: React.FC<GuessTheEmojiGameProps> = ({
       if (isCorrect) {
         anyCorrect = true;
         const usedHint = usedHints[p.id];
-        // 100 pts base + 25 if no hint was used!
         const totalPts = usedHint ? 100 : 125;
         pointsAwarded[p.id] = totalPts;
+        resultsBreakdown[p.id] = { isCorrect: true, guess: playerGuess, points: totalPts };
       } else {
         pointsAwarded[p.id] = 0;
+        resultsBreakdown[p.id] = { isCorrect: false, guess: playerGuess, points: 0 };
       }
     });
 
+    setRoundPointsMap(pointsAwarded);
     onAwardPoints(pointsAwarded);
+
+    syncManager.send({
+      type: 'SYNC_FULL_STATE',
+      payload: {
+        activeGame: 'guess-the-emoji',
+        step: 'REVEAL',
+        currentQuestion: currentPuzzle,
+        guesses: finalGuesses,
+        usedHints,
+        results: {
+          pointsAwarded,
+          resultsBreakdown,
+          correctAnswer: currentPuzzle.answer,
+        },
+        players,
+      },
+    });
 
     setTimeout(() => {
       if (anyCorrect) {
@@ -627,6 +661,11 @@ export const GuessTheEmojiGame: React.FC<GuessTheEmojiGameProps> = ({
               </div>
             );
           })}
+        </div>
+
+        {/* Live Leaderboard Display */}
+        <div className="mb-8 max-w-xl mx-auto">
+          <LeaderboardCard players={players} recentPointsMap={roundPointsMap} />
         </div>
 
         {/* Action Navigation */}
