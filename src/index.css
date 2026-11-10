@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --font-display: 'Fredoka', cursive, system-ui, sans-serif;
+  --font-body: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --giggle-pink: #F9DCE9;
+  --giggle-lavender: #E5DDFB;
+  --giggle-mint: #D9F2E7;
+  --giggle-blue: #DCEEFF;
+  --giggle-yellow: #FFF0CC;
+  --giggle-cream: #FFF9F1;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--giggle-cream);
+  color: #1E1B2E;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display);
+}
+
+/* Custom bounce & pop keyframes */
+@keyframes popIn {
+  0% { transform: scale(0.92); opacity: 0; }
+  70% { transform: scale(1.04); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes gentlePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+.animate-pop-in {
+  animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-gentle-pulse {
+  animation: gentlePulse 2.4s ease-in-out infinite;
+}

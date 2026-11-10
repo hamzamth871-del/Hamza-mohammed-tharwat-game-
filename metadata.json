@@ -1,0 +1,6 @@
+{
+  "name": "GIGGLE — Party Games for Friends",
+  "description": "Play Who's Most Likely To?, Would You Rather?, and Guess the Emoji with 4 players on one phone mirrored to your TV.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
